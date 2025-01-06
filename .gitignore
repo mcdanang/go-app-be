@@ -1,0 +1,22 @@
+# Go binary output
+/bin/
+/build/
+/vendor/
+
+# Go specific
+*.exe
+*.out
+*.test
+
+# IDE/editor specific
+.idea/
+.vscode/
+
+# Operating system files
+.DS_Store
+
+# Log files
+*.log
+
+# Environment variable files (e.g., .env)
+.env
