@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-type PaginatedResponse struct {
+type PaginatedResponseKey struct {
 	Data       []models.Key `json:"data"`
 	Total      int          `json:"total"`
 	Page       int          `json:"page"`
@@ -80,7 +80,7 @@ func GetKeys(db *sql.DB) http.HandlerFunc {
 			keys = append(keys, k)
 		}
 
-		response := PaginatedResponse{
+		response := PaginatedResponseKey{
 			Data:       keys,
 			Total:      total,
 			Page:       page,

@@ -6,6 +6,8 @@ import (
 	"go-app-be/models"
 	"log"
 	"net/http"
+
+	"github.com/gorilla/mux"
 )
 
 // Get all staff
@@ -42,5 +44,39 @@ func CreateStaff(db *sql.DB) http.HandlerFunc {
 		}
 
 		json.NewEncoder(w).Encode(s)
+	}
+}
+
+// Update a staff member
+func UpdateStaff(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
+
+		var s models.Staff
+		json.NewDecoder(r.Body).Decode(&s)
+
+		_, err := db.Exec("UPDATE staff SET name = $1, role = $2 WHERE id = $3", s.Name, s.Role, id)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode("Staff updated successfully")
+	}
+}
+
+// Delete a staff member
+func DeleteStaff(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
+
+		_, err := db.Exec("DELETE FROM staff WHERE id = $1", id)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		json.NewEncoder(w).Encode("Staff deleted successfully")
 	}
 }

@@ -6,66 +6,252 @@ import (
 	"go-app-be/models"
 	"log"
 	"net/http"
-
-	"github.com/gorilla/mux"
+	"strconv"
 )
 
-// Get all key copies
+type PaginatedResponseKeyCopy struct {
+	Data       []models.KeyCopy `json:"data"`
+	Total      int              `json:"total"`
+	Page       int              `json:"page"`
+	PageSize   int              `json:"pageSize"`
+	TotalPages int              `json:"totalPages"`
+}
+
+// Get all key copies with pagination and key_id filter
 func GetKeyCopies(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query("SELECT * FROM key_copies")
+		w.Header().Set("Content-Type", "application/json")
+
+		page, err := strconv.Atoi(r.URL.Query().Get("page"))
+		if err != nil || page <= 0 {
+			page = 1
+		}
+
+		pageSize, err := strconv.Atoi(r.URL.Query().Get("pageSize"))
+		if err != nil || pageSize <= 0 {
+			pageSize = 3
+		}
+
+		nameFilter := r.URL.Query().Get("name")
+		offset := (page - 1) * pageSize
+
+		whereClause := "WHERE 1=1"
+		var queryParams []interface{}
+
+		if nameFilter != "" {
+			// Parse nameFilter as an integer
+			keyID, err := strconv.Atoi(nameFilter)
+			if err == nil {
+				whereClause += " AND key_id = $1"
+				queryParams = append(queryParams, keyID)
+			} else {
+				log.Printf("Invalid key_id filter: %v", err)
+				http.Error(w, "Invalid key_id filter", http.StatusBadRequest)
+				return
+			}
+		}
+
+		countQuery := "SELECT COUNT(*) FROM key_copies " + whereClause
+		var total int
+		err = db.QueryRow(countQuery, queryParams...).Scan(&total)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("Error counting records: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		totalPages := (total + pageSize - 1) / pageSize
+
+		selectQuery := "SELECT id, key_id, staff_id FROM key_copies " + whereClause
+		selectQuery += " ORDER BY id LIMIT $" + strconv.Itoa(len(queryParams)+1) + " OFFSET $" + strconv.Itoa(len(queryParams)+2)
+		queryParams = append(queryParams, pageSize, offset)
+
+		rows, err := db.Query(selectQuery, queryParams...)
+		if err != nil {
+			log.Printf("Error querying records: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
 		}
 		defer rows.Close()
 
 		var keyCopies []models.KeyCopy
 		for rows.Next() {
-			var kc models.KeyCopy
-			if err := rows.Scan(&kc.ID, &kc.KeyID, &kc.StaffID); err != nil {
-				log.Fatal(err)
+			var k models.KeyCopy
+			if err := rows.Scan(&k.ID, &k.KeyID, &k.StaffID); err != nil {
+				log.Printf("Error scanning row: %v", err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
 			}
-			keyCopies = append(keyCopies, kc)
+			keyCopies = append(keyCopies, k)
 		}
 
-		json.NewEncoder(w).Encode(keyCopies)
-	}
-}
-
-// Create key copy
-func CreateKeyCopy(db *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var kc models.KeyCopy
-		json.NewDecoder(r.Body).Decode(&kc)
-
-		err := db.QueryRow("INSERT INTO key_copies (key_id, staff_id) VALUES ($1, $2) RETURNING id", kc.KeyID, kc.StaffID).Scan(&kc.ID)
-		if err != nil {
-			log.Fatal(err)
+		response := PaginatedResponseKeyCopy{
+			Data:       keyCopies,
+			Total:      total,
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: totalPages,
 		}
 
-		json.NewEncoder(w).Encode(kc)
-	}
-}
-
-// Delete a key copy
-func DeleteKeyCopy(db *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		id := vars["id"]
-
-		var existingKey models.KeyCopy
-		err := db.QueryRow("SELECT * FROM key_copies WHERE id = $1", id).Scan(&existingKey.ID, &existingKey.KeyID, &existingKey.StaffID)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("Error encoding response: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
-		} else {
-			_, err := db.Exec("DELETE FROM key_copies WHERE id = $1", id)
-			if err != nil {
-				log.Fatal(err)
-			}
 		}
-
-		json.NewEncoder(w).Encode("Key Copy deleted")
-
 	}
 }
+
+// // Get a specific key by ID
+// func GetKey(db *sql.DB) http.HandlerFunc {
+// 	return func(w http.ResponseWriter, r *http.Request) {
+// 		vars := mux.Vars(r)
+// 		id := vars["id"]
+
+// 		var k models.Key
+// 		err := db.QueryRow("SELECT id, name, description, staff_id FROM keys WHERE id = $1", id).Scan(&k.ID, &k.Name, &k.Description, &k.StaffID)
+// 		if err != nil {
+// 			if err == sql.ErrNoRows {
+// 				http.Error(w, "Key not found", http.StatusNotFound)
+// 			} else {
+// 				log.Printf("Error retrieving key: %v", err)
+// 				http.Error(w, "Internal server error", http.StatusInternalServerError)
+// 			}
+// 			return
+// 		}
+
+// 		json.NewEncoder(w).Encode(k)
+// 	}
+// }
+
+// // Create a new key
+// func CreateKey(db *sql.DB) http.HandlerFunc {
+// 	return func(w http.ResponseWriter, r *http.Request) {
+// 		var k models.Key
+// 		if err := json.NewDecoder(r.Body).Decode(&k); err != nil {
+// 			http.Error(w, "Invalid request body", http.StatusBadRequest)
+// 			return
+// 		}
+
+// 		// Verify staff exists if staff_id is provided
+// 		if k.StaffID != 0 {
+// 			var exists bool
+// 			err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM staff WHERE id = $1)", k.StaffID).Scan(&exists)
+// 			if err != nil {
+// 				log.Printf("Error checking staff existence: %v", err)
+// 				http.Error(w, "Internal server error", http.StatusInternalServerError)
+// 				return
+// 			}
+// 			if !exists {
+// 				http.Error(w, "Staff ID does not exist", http.StatusBadRequest)
+// 				return
+// 			}
+// 		}
+
+// 		err := db.QueryRow(
+// 			"INSERT INTO keys (name, description, staff_id) VALUES ($1, $2, $3) RETURNING id",
+// 			k.Name, k.Description, k.StaffID,
+// 		).Scan(&k.ID)
+
+// 		if err != nil {
+// 			log.Printf("Error creating key: %v", err)
+// 			http.Error(w, "Internal server error", http.StatusInternalServerError)
+// 			return
+// 		}
+
+// 		w.WriteHeader(http.StatusCreated)
+// 		json.NewEncoder(w).Encode(k)
+// 	}
+// }
+
+// // Update a key
+// func UpdateKey(db *sql.DB) http.HandlerFunc {
+// 	return func(w http.ResponseWriter, r *http.Request) {
+// 		vars := mux.Vars(r)
+// 		id := vars["id"]
+
+// 		var k models.Key
+// 		if err := json.NewDecoder(r.Body).Decode(&k); err != nil {
+// 			http.Error(w, "Invalid request body", http.StatusBadRequest)
+// 			return
+// 		}
+
+// 		// Verify key exists
+// 		var existingKey models.Key
+// 		err := db.QueryRow(
+// 			"SELECT id, name, description, staff_id FROM keys WHERE id = $1",
+// 			id,
+// 		).Scan(&existingKey.ID, &existingKey.Name, &existingKey.Description, &existingKey.StaffID)
+
+// 		if err != nil {
+// 			if err == sql.ErrNoRows {
+// 				http.Error(w, "Key not found", http.StatusNotFound)
+// 			} else {
+// 				log.Printf("Error retrieving key: %v", err)
+// 				http.Error(w, "Internal server error", http.StatusInternalServerError)
+// 			}
+// 			return
+// 		}
+
+// 		// Verify staff exists if staff_id is provided
+// 		if k.StaffID != 0 {
+// 			var exists bool
+// 			err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM staff WHERE id = $1)", k.StaffID).Scan(&exists)
+// 			if err != nil {
+// 				log.Printf("Error checking staff existence: %v", err)
+// 				http.Error(w, "Internal server error", http.StatusInternalServerError)
+// 				return
+// 			}
+// 			if !exists {
+// 				http.Error(w, "Staff ID does not exist", http.StatusBadRequest)
+// 				return
+// 			}
+// 		}
+
+// 		_, err = db.Exec(
+// 			"UPDATE keys SET name = $1, description = $2, staff_id = $3 WHERE id = $4",
+// 			k.Name, k.Description, k.StaffID, id,
+// 		)
+
+// 		if err != nil {
+// 			log.Printf("Error updating key: %v", err)
+// 			http.Error(w, "Internal server error", http.StatusInternalServerError)
+// 			return
+// 		}
+
+// 		k.ID = existingKey.ID
+// 		json.NewEncoder(w).Encode(k)
+// 	}
+// }
+
+// // Delete a key
+// func DeleteKey(db *sql.DB) http.HandlerFunc {
+// 	return func(w http.ResponseWriter, r *http.Request) {
+// 		vars := mux.Vars(r)
+// 		id := vars["id"]
+
+// 		var existingKey models.Key
+// 		err := db.QueryRow(
+// 			"SELECT id, name, description, staff_id FROM keys WHERE id = $1",
+// 			id,
+// 		).Scan(&existingKey.ID, &existingKey.Name, &existingKey.Description, &existingKey.StaffID)
+
+// 		if err != nil {
+// 			if err == sql.ErrNoRows {
+// 				http.Error(w, "Key not found", http.StatusNotFound)
+// 			} else {
+// 				log.Printf("Error retrieving key: %v", err)
+// 				http.Error(w, "Internal server error", http.StatusInternalServerError)
+// 			}
+// 			return
+// 		}
+
+// 		_, err = db.Exec("DELETE FROM keys WHERE id = $1", id)
+// 		if err != nil {
+// 			log.Printf("Error deleting key: %v", err)
+// 			http.Error(w, "Internal server error", http.StatusInternalServerError)
+// 			return
+// 		}
+
+// 		json.NewEncoder(w).Encode(map[string]string{"message": "Key deleted successfully"})
+// 	}
+// }
