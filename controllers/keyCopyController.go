@@ -73,7 +73,7 @@ func GetKeyCopies(db *sql.DB) http.HandlerFunc {
 			SELECT kc.id, kc.key_id, k.name AS key_name, kc.staff_id, s.name AS staff_name
 			FROM key_copies kc
 			JOIN keys k ON kc.key_id = k.id
-			JOIN staff s ON kc.staff_id = s.id
+			JOIN staffs s ON kc.staff_id = s.id
 			` + whereClause + `
 			ORDER BY kc.id
 			LIMIT $` + strconv.Itoa(len(queryParams)+1) + ` OFFSET $` + strconv.Itoa(len(queryParams)+2)
