@@ -61,16 +61,16 @@ func createTablesIfNotExist(db *sql.DB) {
 		log.Fatal("Error creating key_copies table: ", err)
 	}
 
-	// Create staff table if not exists
+	// Create staffs table if not exists
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS staff (
+		CREATE TABLE IF NOT EXISTS staffs (
 			id SERIAL PRIMARY KEY,
 			name TEXT NOT NULL,
 			role TEXT
 		)
 	`)
 	if err != nil {
-		log.Fatal("Error creating staff table: ", err)
+		log.Fatal("Error creating staffs table: ", err)
 	}
 }
 

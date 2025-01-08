@@ -13,7 +13,7 @@ import (
 // Get all staff
 func GetStaff(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query("SELECT * FROM staff")
+		rows, err := db.Query("SELECT * FROM staffs")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -38,7 +38,7 @@ func CreateStaff(db *sql.DB) http.HandlerFunc {
 		var s models.Staff
 		json.NewDecoder(r.Body).Decode(&s)
 
-		err := db.QueryRow("INSERT INTO staff (name, role) VALUES ($1, $2) RETURNING id", s.Name, s.Role).Scan(&s.ID)
+		err := db.QueryRow("INSERT INTO staffs (name, role) VALUES ($1, $2) RETURNING id", s.Name, s.Role).Scan(&s.ID)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -56,7 +56,7 @@ func UpdateStaff(db *sql.DB) http.HandlerFunc {
 		var s models.Staff
 		json.NewDecoder(r.Body).Decode(&s)
 
-		_, err := db.Exec("UPDATE staff SET name = $1, role = $2 WHERE id = $3", s.Name, s.Role, id)
+		_, err := db.Exec("UPDATE staffs SET name = $1, role = $2 WHERE id = $3", s.Name, s.Role, id)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -72,7 +72,7 @@ func DeleteStaff(db *sql.DB) http.HandlerFunc {
 		vars := mux.Vars(r)
 		id := vars["id"]
 
-		_, err := db.Exec("DELETE FROM staff WHERE id = $1", id)
+		_, err := db.Exec("DELETE FROM staffs WHERE id = $1", id)
 		if err != nil {
 			log.Fatal(err)
 		}

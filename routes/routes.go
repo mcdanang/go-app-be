@@ -18,10 +18,11 @@ func SetupRoutes(router *mux.Router, db *sql.DB) {
 
 	// Key Copy Routes
 	router.HandleFunc("/key-copies", controllers.GetKeyCopies(db)).Methods("GET", "OPTIONS")
-	// router.HandleFunc("/key-copies", controllers.CreateKeyCopy(db)).Methods("POST", "OPTIONS")
-	// router.HandleFunc("/key-copies/{id}", controllers.DeleteKeyCopy(db)).Methods("DELETE", "OPTIONS")
+	router.HandleFunc("/key-copies", controllers.CreateKeyCopy(db)).Methods("POST", "OPTIONS")
+	router.HandleFunc("/key-copies/{id}", controllers.UpdateKeyCopy(db)).Methods("PUT", "OPTIONS")
+	router.HandleFunc("/key-copies/{id}", controllers.DeleteKeyCopy(db)).Methods("DELETE", "OPTIONS")
 
 	// Staff Routes
-	router.HandleFunc("/staff", controllers.GetStaff(db)).Methods("GET", "OPTIONS")
-	router.HandleFunc("/staff", controllers.CreateStaff(db)).Methods("POST", "OPTIONS")
+	router.HandleFunc("/staffs", controllers.GetStaff(db)).Methods("GET", "OPTIONS")
+	router.HandleFunc("/staffs", controllers.CreateStaff(db)).Methods("POST", "OPTIONS")
 }

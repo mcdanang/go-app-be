@@ -41,7 +41,7 @@ func GetKeys(db *sql.DB) http.HandlerFunc {
 		var queryParams []interface{}
 
 		if nameFilter != "" {
-			whereClause += " AND name ILIKE $1"
+			whereClause += " AND keys.name ILIKE $1"
 			nameParam := "%" + nameFilter + "%"
 			queryParams = append(queryParams, nameParam)
 		}
@@ -57,8 +57,14 @@ func GetKeys(db *sql.DB) http.HandlerFunc {
 
 		totalPages := (total + pageSize - 1) / pageSize
 
-		selectQuery := "SELECT id, name, description, staff_id FROM keys " + whereClause
-		selectQuery += " ORDER BY id LIMIT $" + strconv.Itoa(len(queryParams)+1) + " OFFSET $" + strconv.Itoa(len(queryParams)+2)
+		// Join with the staffs table to get the staff_name
+		selectQuery := `
+			SELECT keys.id, keys.name, keys.description, keys.staff_id, staffs.name AS staff_name
+			FROM keys
+			LEFT JOIN staffs ON keys.staff_id = staffs.id
+		` + whereClause + `
+			ORDER BY keys.id 
+			LIMIT $` + strconv.Itoa(len(queryParams)+1) + ` OFFSET $` + strconv.Itoa(len(queryParams)+2)
 		queryParams = append(queryParams, pageSize, offset)
 
 		rows, err := db.Query(selectQuery, queryParams...)
@@ -69,10 +75,23 @@ func GetKeys(db *sql.DB) http.HandlerFunc {
 		}
 		defer rows.Close()
 
-		var keys []models.Key
+		var keys []struct {
+			ID          int    `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			StaffID     int    `json:"staff_id"`
+			StaffName   string `json:"staff_name"`
+		}
+
 		for rows.Next() {
-			var k models.Key
-			if err := rows.Scan(&k.ID, &k.Name, &k.Description, &k.StaffID); err != nil {
+			var k struct {
+				ID          int    `json:"id"`
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				StaffID     int    `json:"staff_id"`
+				StaffName   string `json:"staff_name"`
+			}
+			if err := rows.Scan(&k.ID, &k.Name, &k.Description, &k.StaffID, &k.StaffName); err != nil {
 				log.Printf("Error scanning row: %v", err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 				return
@@ -80,7 +99,13 @@ func GetKeys(db *sql.DB) http.HandlerFunc {
 			keys = append(keys, k)
 		}
 
-		response := PaginatedResponseKey{
+		response := struct {
+			Data       interface{} `json:"data"`
+			Total      int         `json:"total"`
+			Page       int         `json:"page"`
+			PageSize   int         `json:"pageSize"`
+			TotalPages int         `json:"totalPages"`
+		}{
 			Data:       keys,
 			Total:      total,
 			Page:       page,
@@ -130,7 +155,7 @@ func CreateKey(db *sql.DB) http.HandlerFunc {
 		// Verify staff exists if staff_id is provided
 		if k.StaffID != 0 {
 			var exists bool
-			err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM staff WHERE id = $1)", k.StaffID).Scan(&exists)
+			err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM staffs WHERE id = $1)", k.StaffID).Scan(&exists)
 			if err != nil {
 				log.Printf("Error checking staff existence: %v", err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -190,7 +215,7 @@ func UpdateKey(db *sql.DB) http.HandlerFunc {
 		// Verify staff exists if staff_id is provided
 		if k.StaffID != 0 {
 			var exists bool
-			err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM staff WHERE id = $1)", k.StaffID).Scan(&exists)
+			err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM staffs WHERE id = $1)", k.StaffID).Scan(&exists)
 			if err != nil {
 				log.Printf("Error checking staff existence: %v", err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -237,6 +262,19 @@ func DeleteKey(db *sql.DB) http.HandlerFunc {
 				log.Printf("Error retrieving key: %v", err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 			}
+			return
+		}
+
+		// Check if any key copies reference this key
+		var count int
+		err = db.QueryRow("SELECT COUNT(*) FROM key_copies WHERE key_id = $1", id).Scan(&count)
+		if err != nil {
+			log.Printf("Error checking key copies (key_id=%s): %v", id, err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if count > 0 {
+			http.Error(w, "Cannot delete key: Key is referenced by one or more key copies", http.StatusBadRequest)
 			return
 		}
 
